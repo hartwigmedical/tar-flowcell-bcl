@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+
+REPO_DIR_NAME="$(dirname "$0")" || exit 1
+
+source "${REPO_DIR_NAME}/tar_flowcell_bcl_util" || exit 1
+
+SCRIPT_NAME="$(basename "$0")" || exit 1
+
+DEFAULT_DOCKER_IMAGE_FILE_NAME="${REPO_DIR_NAME}/default_docker_image_at_k8.txt"
+
+print_usage(){
+  info "USAGE: $0 run --job-name <job-name> --flowcell-url <flowcell-url> --output-dir-url <output-dir-url>"
+  info "USAGE: $0 version"
+  info "USAGE: $0 build --name <image-name>"
+  info "USAGE: $0 push --name <image-name>"
+  info "USAGE: $0 set-default --name <image-name>"
+  info "Run these subcommands without arguments for more detailed documentation"
+  info ""
+  info "run               Run tarring jobs in Kubernetes."
+  info "version           Get the name of the current default Docker image for running jobs."
+  info "build             Build new Docker image."
+  info "push              Push new Docker image to GCP."
+  info "set-default       Set Docker image at GCP to default version for running jobs."
+}
+
+print_build_usage(){
+  info "Build new Docker image"
+  info "USAGE: $0 build --name <image-name>"
+  info "  [-n/--name]  (Required)    Name of the Docker image"
+}
+
+print_push_usage(){
+  info "Push Docker image to GCP. If name-version combination exists, please rebuilt and push with new name."
+  info "USAGE: $0 push --name <image-name>"
+  info "  [-n/--name]  (Required)    Name of the Docker image"
+}
+
+print_run_usage(){
+  # TODO: write this
+  info "hi"
+}
+
+print_set_default_usage(){
+  info "Set Docker image as default image for runs."
+  info "USAGE: $0 set-default --name <image-name>"
+  info "  [-n/--name]  (Required)    Name of the Docker image"
+}
+
+tar_flowcell_bcl_k8() {
+  if [ $# -lt 1 ]; then
+    print_usage && exit 1
+  fi
+
+  local CMD=$1 && shift
+  case $CMD in
+  build)
+    build "$@";;
+  push)
+    push "$@";;
+  run)
+    run "$@";;
+  set-default)
+    set_default "$@";;
+  version)
+    version "$@";;
+  *)
+    print_usage && exit 1;;
+  esac
+}
+
+build() {
+  local unrecognized=()
+  local key
+  local name
+  while [[ $# -gt 0 ]]
+  do
+    key="$1" && shift
+    case $key in
+      -n|--name)
+        name="$1" && shift;;
+      *)
+        unrecognized+=("${key}");;
+    esac
+  done
+  
+  # sanity checks
+  local input_error=false
+  if [[ ! ${#unrecognized[@]} -eq 0 ]]; then
+    print_error_msg "unrecognized options to ${SCRIPT_NAME}: options=(${unrecognized[*]})"
+    input_error=true
+  fi
+  if [[ -z ${name} ]]; then
+    print_error_msg "Variable 'name' has not been set"
+    input_error=true
+  fi
+  if [[ ${input_error} == true ]]; then
+    info ""
+    print_build_usage && exit 1
+  fi
+
+  docker build "${REPO_DIR_NAME}" -t "${name}" || die "Failed Docker build"
+
+  info "The build has succeeded."
+  info "If you want to push this image to GCP, run the following command:"
+  info "  $0 push --name ${name}"
+}
+
+push() {
+  local unrecognized=()
+  local key
+  local name
+  while [[ $# -gt 0 ]]
+  do
+    key="$1" && shift
+    case $key in
+      -n|--name)
+        name="$1" && shift;;
+      *)
+        unrecognized+=("${key}");;
+    esac
+  done
+
+  # sanity checks
+  local input_error=false
+  if [[ ! ${#unrecognized[@]} -eq 0 ]]; then
+    print_error_msg "unrecognized options to ${SCRIPT_NAME}: options=(${unrecognized[*]})"
+    input_error=true
+  fi
+  if [[ -z ${name} ]]; then
+    print_error_msg "Variable 'name' has not been set"
+    input_error=true
+  fi
+  if [[ ${input_error} == true ]]; then
+    info ""
+    print_push_usage && exit 1
+  fi
+
+  info "Checking whether image with name '${name}' already exists at GCP"
+  already_pushed=$(image_has_already_been_pushed "${name}")
+
+  if [[ ${already_pushed} ]]; then
+    die "Image with ${name} has already been pushed to GCP. Please rebuild with a newer version of the image name. Run '$0 version' to see the current default version."
+  else
+    info "Pushing new image ${name} to GCP"
+    docker push "${name}" || die "Failed Docker push"
+    info "Pushed new image ${name} to GCP"
+    info "If you wish to set this image as the new default image, run the following command:"
+    info "  $0 set-default --name ${name}"
+  fi
+}
+
+set_default() {
+  local unrecognized=()
+  local key
+  local name
+  while [[ $# -gt 0 ]]
+  do
+    key="$1" && shift
+    case $key in
+      -n|--name)
+        name="$1" && shift;;
+      *)
+        unrecognized+=("${key}");;
+    esac
+  done
+
+  # sanity checks
+  local input_error=false
+  if [[ ! ${#unrecognized[@]} -eq 0 ]]; then
+    print_error_msg "unrecognized options to ${SCRIPT_NAME}: options=(${unrecognized[*]})"
+    input_error=true
+  fi
+  if [[ -z ${name} ]]; then
+    print_error_msg "Variable 'name' has not been set"
+    input_error=true
+  fi
+  if [[ ${input_error} == true ]]; then
+    info ""
+    print_set_default_usage && exit 1
+  fi
+
+  info "Checking whether image with name '${name}' exists at GCP"
+  already_pushed=$(image_has_already_been_pushed "${name}")
+
+  if [[ ${already_pushed} ]]; then
+    set_default_docker_image_at_k8 "${name}" || die "Could not set Default Docker image"
+    info "Default Docker image for runs has been set to ${name}"
+  else
+    die "Cannot set ${name} as default image since it does not exist at GCP."
+  fi
+}
+
+run() {
+  local other_arguments=()
+  local key
+  local job_name
+  local flowcell_url
+  local output_dir_url
+  local docker_image
+  while [[ $# -gt 0 ]]
+  do
+    key="$1" && shift
+    case $key in
+      -n|--job-name)  # required
+        job_name="$1" && shift;;
+      -i|--flowcell-url)  # required
+        flowcell_url="$1" && shift;;
+      -o|--output-dir-url)  # required
+        output_dir_url="$1" && shift;;
+      -d|--docker-image)  # optional
+        docker_image="$1" && shift;;
+      *)
+        other_arguments+=("${key}");;
+    esac
+  done
+
+  # sanity checks
+  local input_error=false
+  if [[ -z ${job_name} ]]; then
+    print_error_msg "Variable 'job-name' has not been set."
+    input_error=true
+  fi
+  if [[ -z ${flowcell_url} ]]; then
+    print_error_msg "Variable 'flowcell-url' has not been set."
+    input_error=true
+  elif [[ ! "${flowcell_url}" =~ ^gs://[-/._a-zA-Z0-9]/ ]]; then
+    print_error_msg "Variable 'flowcell-url' needs to be set to a path of the form 'gs://some-kind/of/path/'."
+    input_error=true
+  elif ! file_exists_in_bucket "${flowcell_url}SampleSheet.csv"; then
+    print_error_msg "Variable 'flowcell-url' does not describe the bucket url of a complete flowcell directory. The sample sheet is missing."
+    input_error=true
+  fi
+  if [[ -z ${output_dir_url} ]]; then
+    print_error_msg "Variable 'output-dir-url' has not been set"
+    input_error=true
+  elif [[ ! "${output_dir_url}" =~ ^gs://[-/._a-zA-Z0-9]/ ]]; then
+    print_error_msg "Variable 'output-dir-url' needs to be set to a path of the form 'gs://some-kind/of/path/'."
+    input_error=true
+  fi
+  if [[ -n ${flowcell_url} && -n ${output_dir_url} && "${flowcell_url}" == "${output_dir_url}" ]]; then
+    print_error_msg "The variables 'flowcell-url' and 'output-dir-url' cannot be set to equal values."
+    input_error=true
+  fi
+  if [[ ${#other_arguments[*]} -gt 0 ]]; then
+    print_error_msg "Unrecognized arguments: ${other_arguments[*]}"
+    input_error=true
+  fi
+  if [[ ${input_error} == true ]]; then
+    info ""
+    print_run_usage && exit 1
+  fi
+
+  # set default if needed
+  if [[ -z ${docker_image} ]]; then
+    docker_image="$(get_default_docker_image_at_k8)" || die "Could not find default Docker image name"
+  fi
+
+  # Make sure correct credentials are available
+  gcloud container clusters get-credentials rerun-cluster --region europe-west4 --project hmf-crunch \
+        || die "Could not find credentials at gcp"
+
+  local clean_job_name
+  clean_job_name="$(echo "${job_name}" | awk '{print tolower($0)}' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | tr '.' '-')"
+
+  sed \
+  -e "s/VAR_JOB_NAME/${clean_job_name}/g" \
+  -e "s#DOCKER_IMAGE#${docker_image}#g" \
+  -e "s#VAR_FLOWCELL_URL#${flowcell_url}#g" \
+  -e "s#VAR_OUTPUT_DIR_URL#${output_dir_url}#g" \
+  "${REPO_DIR_NAME}/k8/hmf-crunch/deploy.yaml" \
+  | kubectl create -f -  # use # as separator to handle / properly
+}
+
+version() {
+  local default_docker_image
+  default_docker_image="$(get_default_docker_image_at_k8)" || die "Could not find default Docker image name"
+  info "Current default Docker image version at k8: ${default_docker_image}"
+}
+
+get_default_docker_image_at_k8() {
+  cat "${DEFAULT_DOCKER_IMAGE_FILE_NAME}"
+}
+
+set_default_docker_image_at_k8() {
+  local name=$1 && shift
+  [[ -n ${name} ]] || die "Not enough arguments to ${FUNCNAME[0]}"
+  echo "${name}" > "${DEFAULT_DOCKER_IMAGE_FILE_NAME}"
+}
+
+image_has_already_been_pushed() {
+  local name=$1 && shift
+  [[ -n ${name} ]] || die "Not enough arguments to ${FUNCNAME[0]}"
+  docker manifest inspect "${name}"
+}
+
+tar_flowcell_bcl_k8 "$@"

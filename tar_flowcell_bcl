@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+source "$HOME/tar_flowcell_bcl_util" || exit 1
+
+tar_flowcell_bcl() {
+  info "Hello world"
+  # TODO: write this
+}
+
+tar_flowcell_bcl "$@"
