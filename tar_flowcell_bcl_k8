@@ -224,15 +224,15 @@ run() {
   if [[ -z ${flowcell_url} ]]; then
     print_error_msg "Variable 'flowcell-url' has not been set."
     input_error=true
-  elif [[ ! "${flowcell_url}" =~ ^gs://[-/._a-zA-Z0-9]/ ]]; then
-    print_error_msg "Variable 'flowcell-url' needs to be set to a path of the form 'gs://some-kind/of/path/'."
+  elif [[ ! "${flowcell_url}" =~ ^gs://[-/._a-zA-Z0-9]/$ ]]; then
+    print_error_msg "Variable 'flowcell-url' needs to be set to a path of the form 'gs://some-kind/of/path/'.: ${flowcell_url}"
     input_error=true
   fi
   if [[ -z ${output_dir_url} ]]; then
     print_error_msg "Variable 'output-dir-url' has not been set"
     input_error=true
-  elif [[ ! "${output_dir_url}" =~ ^gs://[-/._a-zA-Z0-9]/ ]]; then
-    print_error_msg "Variable 'output-dir-url' needs to be set to a path of the form 'gs://some-kind/of/path/'."
+  elif [[ ! "${output_dir_url}" =~ ^gs://[-/._a-zA-Z0-9]/$ ]]; then
+    print_error_msg "Variable 'output-dir-url' needs to be set to a path of the form 'gs://some-kind/of/path/'.: ${output_dir_url}"
     input_error=true
   fi
   if [[ -n ${flowcell_url} && -n ${output_dir_url} && "${flowcell_url}" == "${output_dir_url}" ]]; then
