@@ -8,14 +8,14 @@ create_parent_directories() {
   mkdir -p "${file_path%/*}" || die "Could not create parent directories for file"
 }
 
+get_thread_count(){
+  echo $(($(grep -c processor /proc/cpuinfo) * 8 / 10 ))
+}
+
 file_exists_in_bucket() {
   local bucket_path=$1 && shift
   [[ -n ${bucket_path} ]] || die "Not enough arguments to ${FUNCNAME[0]}"
   ${GSUTIL} -q stat "${bucket_path}"
-}
-
-get_thread_count(){
-  echo $(($(grep -c processor /proc/cpuinfo) * 8 / 10 ))
 }
 
 tool_exists_or_die() {

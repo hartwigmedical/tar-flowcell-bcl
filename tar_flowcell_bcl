@@ -2,9 +2,114 @@
 
 source "$HOME/tar_flowcell_bcl_util" || exit 1
 
+SCRIPT_NAME="$(basename "$0")" || exit 1
+
+LOCAL_OUTPUT_DIR="$HOME/output/"
+
+
 tar_flowcell_bcl() {
-  info "Hello world"
-  # TODO: write this
+  info "Starting with ${SCRIPT_NAME}"
+
+  local flowcell_url=$1 && shift
+  local output_dir_url=$1 && shift
+
+  # sanity checks
+  tool_exists_or_die "${GSUTIL}"
+  [[ -n "${flowcell_url}" && -n "${output_dir_url}" ]] || die "Missing expected arguments. flowcell_url:'${flowcell_url}', output_dir_url:'${output_dir_url}'"
+  [[ $# -eq 0 ]] || die "Received more arguments than expected"
+  file_exists_in_bucket "${flowcell_url}BCLUploadComplete.timestamp" || die "Flowcell has not finished uploading. flowcell_url:'${flowcell_url}'"
+  file_exists_in_bucket "${flowcell_url}SampleSheet.csv" || die "Flowcell bucket does not contain a sample sheet. flowcell_url:'${flowcell_url}'"
+
+  info "Tarring flowcell with following arguments:"
+  info "flowcell_url='${flowcell_url}'"
+  info "output_dir_url='${output_dir_url}'"
+
+  local flowcell_name
+  flowcell_name=$(get_flowcell_name "${flowcell_url}") || die "Could not get flowcell name"
+
+  local local_flowcell_dir="$HOME/${flowcell_name}"
+
+  info "Download flowcell to '${local_flowcell_dir}'"
+  local download_exclusion_string=".*Fastq.*|.*Logs.*|.*Images.*|.*fastq\.gz|conversion.*\.txt|.*\.timestamp"
+  gsutil -mq rsync -r -x "${download_exclusion_string}" "${flowcell_url}" "${local_flowcell_dir}" || die "Could not download flowcell dir"
+
+  info "Get output file names"
+  local sample_sheet="${local_flowcell_dir}/SampleSheet.csv"
+  local tar_name
+  tar_name=$(get_tar_name "${sample_sheet}") || die "Could not get tar name"
+  local content_file_name="${tar_name}.content"
+  local md5_file_name="${tar_name}.md5"
+
+  local tar_in_bucket="${output_dir_url}${tar_name}"
+  local content_file_in_bucket="${output_dir_url}${content_file_name}"
+  local md5_file_in_bucket="${output_dir_url}${md5_file_name}"
+
+  info "Output file names will be:"
+  info "tar    : ${tar_in_bucket}"
+  info "content: ${content_file_in_bucket}"
+  info "md5    : ${md5_file_in_bucket}"
+
+  if file_exists_in_bucket "${tar_in_bucket}"; then
+    die "Tar already exists in bucket."
+  elif file_exists_in_bucket "${content_file_name}"; then
+    die "Content file already exists in bucket."
+  elif file_exists_in_bucket "${md5_file_name}"; then
+    die "Md5 file already exists in bucket."
+  fi
+
+  mkdir -p "${LOCAL_OUTPUT_DIR}" || die "Could not create output dir"
+  local local_tar="${LOCAL_OUTPUT_DIR}${tar_name}"
+  local local_content_file="${LOCAL_OUTPUT_DIR}${content_file_name}"
+  local local_md5_file="${LOCAL_OUTPUT_DIR}${md5_file_name}"
+
+  info "Tar flowcell"
+  tar -cf "${local_tar}" "${local_flowcell_dir}" || die "Could not tar flowcell"
+  info "Create content file"
+  tar -tf "${local_tar}" > "${local_content_file}" || die "Could not create content file"
+  info "Create md5 file"
+  md5sum "${local_tar}" > "${local_md5_file}" || die "Could not create md5 file"
+
+  info "Upload results"
+  gsutil -mq rsync -r "${LOCAL_OUTPUT_DIR}" "${output_dir_url}" || die "Could not upload results"
+
+  if ! file_exists_in_bucket "${tar_in_bucket}"; then
+    die "Tar upload failed."
+  elif ! file_exists_in_bucket "${content_file_name}"; then
+    die "Content file upload failed."
+  elif ! file_exists_in_bucket "${md5_file_name}"; then
+    die "Md5 file upload failed."
+  fi
+
+  size_of_tar=$(du -h "${local_tar}" | cut -f1) || die "Could not determine size of tar"
+  info "Size of tar: ${size_of_tar}"
+
+  info "Finished ${SCRIPT_NAME}"
+}
+
+get_tar_name() {
+  local sample_sheet=$1 && shift
+  [[ -n ${sample_sheet} ]] || die "Not enough arguments to ${FUNCNAME[0]}"
+  local col_idx
+  col_idx=$(grep "^Sample_ID" "${sample_sheet}" | tr "," "\n" | grep -n Project | cut -d":" -f1) || die "Could not get column index for Project"
+  local projects
+  projects=$(join_by "-" "$(sed -e '1,/Sample_ID/d' "${sample_sheet}" | \
+      grep -vP "^[\,\s]+$" | cut -d"," -f "${col_idx}" | sort | uniq)") || die "Could not get projects string"
+  local tar_name="${flowcell_name}_${projects}_BCL.tar"
+  echo "${tar_name}"
+}
+
+get_flowcell_name() {
+  local flowcell_url=$1 && shift
+  [[ -n ${flowcell_url} ]] || die "Not enough arguments to ${FUNCNAME[0]}"
+  shopt -s extglob
+  local flowcell_url_without_trailing_slashes="${flowcell_url%%+(/)}"
+  local flowcell_name="${flowcell_url_without_trailing_slashes##*/}"
+  echo "${flowcell_name}"
+}
+
+join_by() {
+  local IFS="$1" && shift
+  echo "$*"
 }
 
 tar_flowcell_bcl "$@"
