@@ -215,7 +215,6 @@ run() {
   done
 
   # sanity checks
-  tool_exists_or_die "${GSUTIL}"
   local input_error=false
   if [[ -z ${job_name} ]]; then
     print_error_msg "Variable 'job-name' has not been set."
@@ -237,16 +236,6 @@ run() {
   fi
   if [[ -n ${flowcell_url} && -n ${output_dir_url} && "${flowcell_url}" == "${output_dir_url}" ]]; then
     print_error_msg "The variables 'flowcell-url' and 'output-dir-url' cannot be set to equal values."
-    input_error=true
-  fi
-  if ! gsutil ls "${flowcell_url}"; then
-    print_error_msg "Either flowcell does not exist, or we don't have permission to access the flowcell."
-    input_error=true
-  elif ! file_exists_in_bucket "${flowcell_url}BCLUploadComplete.timestamp"; then
-    print_error_msg "Flowcell has not finished uploading."
-    input_error=true
-  elif ! file_exists_in_bucket "${flowcell_url}SampleSheet.csv"; then
-    print_error_msg "Flowcell bucket does not contain a sample sheet."
     input_error=true
   fi
   if [[ ${#other_arguments[*]} -gt 0 ]]; then

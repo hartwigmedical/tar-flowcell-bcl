@@ -4,6 +4,8 @@ source "$HOME/tar_flowcell_bcl_util" || exit 1
 
 SCRIPT_NAME="$(basename "$0")" || exit 1
 
+GSUTIL="gsutil"
+
 LOCAL_OUTPUT_DIR="$HOME/output/"
 
 
@@ -17,6 +19,7 @@ tar_flowcell_bcl() {
   tool_exists_or_die "${GSUTIL}"
   [[ -n "${flowcell_url}" && -n "${output_dir_url}" ]] || die "Missing expected arguments. flowcell_url:'${flowcell_url}', output_dir_url:'${output_dir_url}'"
   [[ $# -eq 0 ]] || die "Received more arguments than expected"
+  "${GSUTIL}" ls "${flowcell_url}" || die "Either flowcell directory does not exist, or missing permission to access the directory."
   file_exists_in_bucket "${flowcell_url}BCLUploadComplete.timestamp" || die "Flowcell has not finished uploading. flowcell_url:'${flowcell_url}'"
   file_exists_in_bucket "${flowcell_url}SampleSheet.csv" || die "Flowcell bucket does not contain a sample sheet. flowcell_url:'${flowcell_url}'"
 
@@ -31,7 +34,7 @@ tar_flowcell_bcl() {
 
   info "Download flowcell to '${local_flowcell_dir}'"
   local download_exclusion_string=".*Fastq.*|.*Logs.*|.*Images.*|.*fastq\.gz|conversion.*\.txt|.*\.timestamp"
-  gsutil -mq rsync -r -x "${download_exclusion_string}" "${flowcell_url}" "${local_flowcell_dir}" || die "Could not download flowcell dir"
+  "${GSUTIL}" -mq rsync -r -x "${download_exclusion_string}" "${flowcell_url}" "${local_flowcell_dir}" || die "Could not download flowcell dir"
 
   info "Get output file names"
   local sample_sheet="${local_flowcell_dir}/SampleSheet.csv"
@@ -70,7 +73,7 @@ tar_flowcell_bcl() {
   md5sum "${local_tar}" > "${local_md5_file}" || die "Could not create md5 file"
 
   info "Upload results"
-  gsutil -mq rsync -r "${LOCAL_OUTPUT_DIR}" "${output_dir_url}" || die "Could not upload results"
+  "${GSUTIL}" -mq rsync -r "${LOCAL_OUTPUT_DIR}" "${output_dir_url}" || die "Could not upload results"
 
   if ! file_exists_in_bucket "${tar_in_bucket}"; then
     die "Tar upload failed."
@@ -105,6 +108,12 @@ get_flowcell_name() {
   local flowcell_url_without_trailing_slashes="${flowcell_url%%+(/)}"
   local flowcell_name="${flowcell_url_without_trailing_slashes##*/}"
   echo "${flowcell_name}"
+}
+
+file_exists_in_bucket() {
+  local bucket_path=$1 && shift
+  [[ -n ${bucket_path} ]] || die "Not enough arguments to ${FUNCNAME[0]}"
+  ${GSUTIL} -q stat "${bucket_path}"
 }
 
 join_by() {
