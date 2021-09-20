@@ -191,6 +191,7 @@ set_default() {
 }
 
 run() {
+  info "Parsing run arguments"
   local other_arguments=()
   local key
   local job_name
@@ -247,6 +248,8 @@ run() {
     print_run_usage && exit 1
   fi
 
+  info "Passed sanity checks"
+
   # set default if needed
   if [[ -z ${docker_image} ]]; then
     docker_image="$(get_default_docker_image_at_k8)" || die "Could not find default Docker image name"
@@ -259,6 +262,7 @@ run() {
   local clean_job_name
   clean_job_name="$(echo "${job_name}" | awk '{print tolower($0)}' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | tr '.' '-')"
 
+  info "Start k8 job"
   sed \
   -e "s/VAR_JOB_NAME/${clean_job_name}/g" \
   -e "s#DOCKER_IMAGE#${docker_image}#g" \
