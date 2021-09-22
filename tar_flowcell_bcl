@@ -20,7 +20,6 @@ tar_flowcell_bcl() {
   [[ -n "${flowcell_url}" && -n "${output_dir_url}" ]] || die "Missing expected arguments. flowcell_url:'${flowcell_url}', output_dir_url:'${output_dir_url}'"
   [[ $# -eq 0 ]] || die "Received more arguments than expected"
   "${GSUTIL}" ls "${flowcell_url}" || die "Either flowcell directory does not exist, or missing permission to access the directory."
-  file_exists_in_bucket "${flowcell_url}BCLUploadComplete.timestamp" || die "Flowcell has not finished uploading. flowcell_url:'${flowcell_url}'"
   file_exists_in_bucket "${flowcell_url}SampleSheet.csv" || die "Flowcell bucket does not contain a sample sheet. flowcell_url:'${flowcell_url}'"
 
   info "Tarring flowcell with following arguments:"
