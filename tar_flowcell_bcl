@@ -29,7 +29,8 @@ tar_flowcell_bcl() {
   local flowcell_name
   flowcell_name=$(get_flowcell_name "${flowcell_url}") || die "Could not get flowcell name"
 
-  local local_flowcell_dir="$HOME/${flowcell_name}"
+  local local_flowcell_dir="$HOME/${flowcell_name}/"
+  mkdir -p "${local_flowcell_dir}"
 
   info "Download flowcell to '${local_flowcell_dir}'"
   local download_exclusion_string=".*Fastq.*|.*Logs.*|.*Images.*|.*fastq\.gz|conversion.*\.txt|.*\.timestamp"
