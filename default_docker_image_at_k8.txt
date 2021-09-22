@@ -1,1 +1,1 @@
-eu.gcr.io/hmf-build/tar-flowcell-bcl:0.5
+eu.gcr.io/hmf-build/tar-flowcell-bcl:0.6

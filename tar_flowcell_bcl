@@ -54,9 +54,9 @@ tar_flowcell_bcl() {
 
   if file_exists_in_bucket "${tar_in_bucket}"; then
     die "Tar already exists in bucket."
-  elif file_exists_in_bucket "${content_file_name}"; then
+  elif file_exists_in_bucket "${content_file_in_bucket}"; then
     die "Content file already exists in bucket."
-  elif file_exists_in_bucket "${md5_file_name}"; then
+  elif file_exists_in_bucket "${md5_file_in_bucket}"; then
     die "Md5 file already exists in bucket."
   fi
 
@@ -77,9 +77,9 @@ tar_flowcell_bcl() {
 
   if ! file_exists_in_bucket "${tar_in_bucket}"; then
     die "Tar upload failed."
-  elif ! file_exists_in_bucket "${content_file_name}"; then
+  elif ! file_exists_in_bucket "${content_file_in_bucket}"; then
     die "Content file upload failed."
-  elif ! file_exists_in_bucket "${md5_file_name}"; then
+  elif ! file_exists_in_bucket "${md5_file_in_bucket}"; then
     die "Md5 file upload failed."
   fi
 
